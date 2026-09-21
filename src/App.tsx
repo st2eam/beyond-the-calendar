@@ -139,7 +139,7 @@ function App() {
   const todayLifeDay = birthDate ? formatLifeDay(birthDate) : 0
   const selectedRecord = snapshot?.records[selectedDate]
   const selectedIsInMap = Boolean(birthDate && selectedDate >= birthDate && selectedDate < isoDate(addYears(parseDate(birthDate), 100)))
-  const nextImportantDays = useMemo(() => (snapshot?.importantDays ?? []).map((item) => ({ item, date: getNextImportantDate(item) })).sort((a, b) => a.date.getTime() - b.date.getTime()), [snapshot])
+  const nextImportantDays = useMemo(() => (snapshot?.importantDays ?? []).filter((item) => item.type !== 'elapsed').map((item) => ({ item, date: getNextImportantDate(item) })).sort((a, b) => a.date.getTime() - b.date.getTime()), [snapshot])
 
   useEffect(() => {
     setDraftRecord(selectedRecord ?? blankRecord(selectedDate))
