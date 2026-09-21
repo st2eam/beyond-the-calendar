@@ -1,0 +1,32 @@
+{
+  "name": "beyond-the-calendar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "latest",
+    "@vitejs/plugin-react": "latest",
+    "ahooks": "latest",
+    "antd": "latest",
+    "axios": "latest",
+    "fflate": "latest",
+    "idb": "latest",
+    "qrcode": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vite-plugin-pwa": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.62.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}
