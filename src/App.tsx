@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, MouseEvent, UIEvent } from 'react'
 import {
   ArrowRightOutlined,
   BellOutlined,
@@ -51,6 +51,17 @@ type ContributionLayout = {
   positions: Map<string, { week: number; day: number }>
 }
 
+type VisibleYearRange = {
+  start: number
+  end: number
+}
+
+type ContributionLocation = {
+  rowIndex: number
+  week: number
+  day: number
+}
+
 function buildContributionLayout(row: ReturnType<typeof buildLifeMap>[number]): ContributionLayout {
   const firstDate = parseDate(row.cells[0])
   const leading = (firstDate.getDay() + 6) % 7
@@ -67,7 +78,7 @@ function buildContributionLayout(row: ReturnType<typeof buildLifeMap>[number]): 
   return { year: row.year, weeks, positions }
 }
 
-function LifeContributionMap({ rows, today, selectedDate, records, importantDates, onSelect }: {
+const LifeContributionMap = memo(function LifeContributionMap({ rows, today, selectedDate, records, importantDates, onSelect }: {
   rows: ReturnType<typeof buildLifeMap>
   today: string
   selectedDate: string
@@ -76,10 +87,16 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   onSelect: (date: string) => void
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const baseCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
+  const baseContextRef = useRef<CanvasRenderingContext2D | null>(null)
+  const overlayContextRef = useRef<CanvasRenderingContext2D | null>(null)
   const hoverPaintRef = useRef<{ x: number; y: number; size: number } | null>(null)
+  const scrollTopRef = useRef(0)
+  const scrollFrameRef = useRef<number | null>(null)
   const [width, setWidth] = useState(900)
+  const [finePointer, setFinePointer] = useState(false)
   const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
   const layouts = useMemo(() => rows.map(buildContributionLayout), [rows])
   const gap = width < 640 ? 2 : 4
@@ -90,9 +107,22 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   const rowGap = width < 640 ? 15 : 19
   const topPadding = 28
   const canvasWidth = Math.max(width - 4, 1)
-  const canvasHeight = topPadding + layouts.length * (rowHeight + rowGap) + 12
+  const rowSpan = rowHeight + rowGap
+  const totalHeight = topPadding + layouts.length * rowSpan + 12
+  const viewportHeight = Math.min(520, totalHeight)
+  const overscan = 3
+  const getVisibleRange = (scrollTop: number): VisibleYearRange => {
+    if (!layouts.length) return { start: 0, end: -1 }
+    const start = Math.max(0, Math.floor(scrollTop / rowSpan) - overscan)
+    const end = Math.min(layouts.length - 1, Math.ceil((scrollTop + viewportHeight) / rowSpan) + overscan)
+    return { start, end }
+  }
+  const [visibleRange, setVisibleRange] = useState<VisibleYearRange>(() => getVisibleRange(0))
+  const visibleLayouts = useMemo(() => layouts.slice(visibleRange.start, visibleRange.end + 1), [layouts, visibleRange])
+  const visibleOffset = visibleRange.start * rowSpan
+  const visibleCanvasHeight = topPadding + visibleLayouts.length * rowSpan + 12
   const dateLocations = useMemo(() => {
-    const locations = new Map<string, { rowIndex: number; week: number; day: number }>()
+    const locations = new Map<string, ContributionLocation>()
     layouts.forEach((layout, rowIndex) => layout.positions.forEach((position, date) => locations.set(date, { rowIndex, ...position })))
     return locations
   }, [layouts])
@@ -105,17 +135,35 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   }, [])
 
   useEffect(() => {
+    const query = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const updatePointer = () => setFinePointer(query.matches)
+    updatePointer()
+    query.addEventListener?.('change', updatePointer)
+    return () => query.removeEventListener?.('change', updatePointer)
+  }, [])
+
+  useEffect(() => {
+    const nextRange = getVisibleRange(scrollTopRef.current)
+    setVisibleRange((current) => current.start === nextRange.start && current.end === nextRange.end ? current : nextRange)
+  }, [layouts.length, rowSpan, viewportHeight])
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current)
+  }, [])
+
+  useEffect(() => {
     const canvas = baseCanvasRef.current
     if (!canvas) return
-    const ratio = window.devicePixelRatio || 1
-    canvas.width = canvasWidth * ratio
-    canvas.height = canvasHeight * ratio
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5)
+    canvas.width = Math.ceil(canvasWidth * ratio)
+    canvas.height = Math.ceil(visibleCanvasHeight * ratio)
     canvas.style.width = `${canvasWidth}px`
-    canvas.style.height = `${canvasHeight}px`
+    canvas.style.height = `${visibleCanvasHeight}px`
     const context = canvas.getContext('2d')
     if (!context) return
-    context.scale(ratio, ratio)
-    context.clearRect(0, 0, canvasWidth, canvasHeight)
+    baseContextRef.current = context
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.clearRect(0, 0, canvasWidth, visibleCanvasHeight)
     context.font = `${width < 640 ? 9 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`
     context.textBaseline = 'middle'
 
@@ -138,10 +186,11 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
       }
     }
 
-    layouts.forEach((layout, rowIndex) => {
-      const rowTop = topPadding + rowIndex * (rowHeight + rowGap)
-      context.fillStyle = rowIndex % 2 === 0 ? 'rgba(37,61,50,.025)' : 'transparent'
-      if (rowIndex % 2 === 0) context.fillRect(0, rowTop - 8, canvasWidth, rowHeight + 15)
+    visibleLayouts.forEach((layout, visibleRowIndex) => {
+      const globalRowIndex = visibleRange.start + visibleRowIndex
+      const rowTop = topPadding + visibleRowIndex * rowSpan
+      context.fillStyle = globalRowIndex % 2 === 0 ? 'rgba(37,61,50,.025)' : 'transparent'
+      if (globalRowIndex % 2 === 0) context.fillRect(0, rowTop - 8, canvasWidth, rowHeight + 15)
       context.strokeStyle = 'rgba(37,61,50,.13)'
       context.lineWidth = 1
       context.beginPath()
@@ -154,51 +203,60 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
         if (!date) return
         drawCell(labelWidth + weekIndex * step, rowTop + dayIndex * step, date)
       }))
-    })
-
-    const firstLayout = layouts[0]
-    if (firstLayout) {
       let lastMonth = -1
-      firstLayout.weeks.forEach((week, weekIndex) => {
+      layout.weeks.forEach((week, weekIndex) => {
         const firstDate = week.find(Boolean)
         if (!firstDate) return
         const month = Number(firstDate.slice(5, 7))
         if (month === lastMonth) return
         lastMonth = month
         context.fillStyle = 'rgba(37,61,50,.48)'
-        context.fillText(`${month}月`, labelWidth + weekIndex * step, 10)
+        context.fillText(`${month}月`, labelWidth + weekIndex * step, rowTop - 17)
       })
-    }
-  }, [canvasHeight, canvasWidth, cellSize, importantDates, labelWidth, layouts, records, rowHeight, selectedDate, step, today, topPadding, width])
+    })
+  }, [canvasWidth, cellSize, importantDates, labelWidth, records, rowHeight, rowSpan, selectedDate, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleRange.start, width])
 
   useEffect(() => {
     const canvas = overlayCanvasRef.current
     if (!canvas) return
-    const ratio = window.devicePixelRatio || 1
-    canvas.width = canvasWidth * ratio
-    canvas.height = canvasHeight * ratio
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5)
+    canvas.width = Math.ceil(canvasWidth * ratio)
+    canvas.height = Math.ceil(visibleCanvasHeight * ratio)
     canvas.style.width = `${canvasWidth}px`
-    canvas.style.height = `${canvasHeight}px`
+    canvas.style.height = `${visibleCanvasHeight}px`
     const context = canvas.getContext('2d')
     if (!context) return
+    overlayContextRef.current = context
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
-    context.clearRect(0, 0, canvasWidth, canvasHeight)
+    context.clearRect(0, 0, canvasWidth, visibleCanvasHeight)
     hoverPaintRef.current = null
-  }, [canvasHeight, canvasWidth])
+    setHovered(null)
+  }, [canvasWidth, visibleCanvasHeight, visibleRange.start])
+
+  function handleScroll(event: UIEvent<HTMLDivElement>) {
+    scrollTopRef.current = event.currentTarget.scrollTop
+    if (scrollFrameRef.current !== null) return
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null
+      const nextRange = getVisibleRange(scrollTopRef.current)
+      setVisibleRange((current) => current.start === nextRange.start && current.end === nextRange.end ? current : nextRange)
+    })
+  }
 
   function dateAtPoint(x: number, y: number) {
-    const rowIndex = Math.floor((y - topPadding) / (rowHeight + rowGap))
+    const globalY = y + visibleOffset
+    const rowIndex = Math.floor((globalY - topPadding) / rowSpan)
     const layout = layouts[rowIndex]
     if (!layout) return null
-    const rowTop = topPadding + rowIndex * (rowHeight + rowGap)
+    const rowTop = topPadding + rowIndex * rowSpan
     const week = Math.floor((x - labelWidth) / step)
-    const day = Math.floor((y - rowTop) / step)
-    if (x < labelWidth || week < 0 || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || (y - rowTop) % step > cellSize) return null
+    const day = Math.floor((globalY - rowTop) / step)
+    if (x < labelWidth || week < 0 || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || (globalY - rowTop) % step > cellSize) return null
     return layout.weeks[week]?.[day] ?? null
   }
 
   function paintHover(date: string | null) {
-    const context = overlayCanvasRef.current?.getContext('2d')
+    const context = overlayContextRef.current
     if (!context) return
     const previous = hoverPaintRef.current
     if (previous) context.clearRect(previous.x - 4, previous.y - 4, previous.size + 8, previous.size + 8)
@@ -209,7 +267,7 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
     const location = dateLocations.get(date)
     if (!location) return
     const x = labelWidth + location.week * step
-    const y = topPadding + location.rowIndex * (rowHeight + rowGap) + location.day * step
+    const y = topPadding + (location.rowIndex - visibleRange.start) * rowSpan + location.day * step
     context.strokeStyle = '#253d32'
     context.lineWidth = 2
     context.strokeRect(x - 2, y - 2, cellSize + 4, cellSize + 4)
@@ -217,6 +275,7 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   }
 
   function handleMove(event: MouseEvent<HTMLCanvasElement>) {
+    if (!finePointer) return
     const date = dateAtPoint(event.nativeEvent.offsetX, event.nativeEvent.offsetY)
     if (!date) {
       paintHover(null)
@@ -225,7 +284,7 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
     }
     if (hovered?.date === date) return
     paintHover(date)
-    setHovered({ date, x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY })
+    setHovered({ date, x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY + visibleOffset })
   }
 
   function handleClick(event: MouseEvent<HTMLCanvasElement>) {
@@ -241,9 +300,9 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   const hoveredRecord = hovered ? records[hovered.date] : undefined
   return <div className="contribution-frame" ref={frameRef}>
     <div className="contribution-summary"><span><b>{rows.length} 年</b> · 每一个小格是一日</span><span>上下滚动回望整张人生地图</span></div>
-    <div className="contribution-scroll"><div className="contribution-canvas-stack" style={{ width: canvasWidth, height: canvasHeight }}><canvas ref={baseCanvasRef} className="contribution-base" aria-hidden="true" /><canvas ref={overlayCanvasRef} className="contribution-overlay" onMouseMove={handleMove} onMouseLeave={handleLeave} onClick={handleClick} role="img" aria-label="人生格点贡献图，按年份分隔，点击任意小格打开当天记录" />{hovered && <div className="map-hovercard" style={{ left: Math.min(hovered.x + 14, canvasWidth - 175), top: Math.max(hovered.y - 18, 8) }} role="tooltip"><b>{formatChineseDate(hovered.date)}</b><span>{hoveredRecord ? '已有记录' : hovered.date === today ? '今天' : hovered.date < today ? '走过的一天' : '尚未抵达'}</span></div>}</div></div>
+    <div className="contribution-scroll" ref={scrollRef} onScroll={handleScroll}><div className="contribution-canvas-stack" style={{ width: canvasWidth, height: totalHeight }}><canvas ref={baseCanvasRef} className="contribution-base" style={{ top: visibleOffset }} aria-hidden="true" /><canvas ref={overlayCanvasRef} className="contribution-overlay" style={{ top: visibleOffset }} onMouseMove={finePointer ? handleMove : undefined} onMouseLeave={finePointer ? handleLeave : undefined} onClick={handleClick} role="img" aria-label="人生格点贡献图，按年份分隔，点击任意小格打开当天记录" />{hovered && <div className="map-hovercard" style={{ left: Math.min(hovered.x + 14, canvasWidth - 175), top: Math.max(hovered.y - 18, 8) }} role="tooltip"><b>{formatChineseDate(hovered.date)}</b><span>{hoveredRecord ? '已有记录' : hovered.date === today ? '今天' : hovered.date < today ? '走过的一天' : '尚未抵达'}</span></div>}</div></div>
   </div>
-}
+})
 
 function App() {
   const [snapshot, setSnapshot] = useState<LifeSnapshot | null>(null)
@@ -306,10 +365,10 @@ function App() {
     if (message) setNotice(message)
   }
 
-  function selectDate(date: string) {
+  const selectDate = useCallback((date: string) => {
     setSelectedDate(date)
     document.getElementById('day-point')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
+  }, [])
 
   async function saveBirthDate() {
     if (!draftBirthDate || !snapshot) return
