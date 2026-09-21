@@ -58,6 +58,7 @@ type VisibleYearRange = {
 
 type ContributionLocation = {
   rowIndex: number
+  bandIndex: number
   week: number
   day: number
 }
@@ -99,14 +100,19 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   const [finePointer, setFinePointer] = useState(false)
   const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
   const layouts = useMemo(() => rows.map(buildContributionLayout), [rows])
-  const gap = width < 640 ? 2 : 4
+  const gap = 4
   const labelWidth = width < 640 ? 34 : 57
-  const cellSize = Math.max(2, Math.floor((Math.max(180, width - labelWidth - 4) - 52 * gap) / 53))
+  const cellSize = 10
   const step = cellSize + gap
-  const rowHeight = step * 7 - gap
+  const bandHeight = step * 7 - gap
+  const bandGap = width < 640 ? 8 : 10
   const rowGap = width < 640 ? 15 : 19
   const topPadding = 28
   const canvasWidth = Math.max(width - 4, 1)
+  const weeksPerBand = Math.max(1, Math.min(54, Math.floor((canvasWidth - labelWidth + gap) / step)))
+  const maxWeekCount = layouts.reduce((max, layout) => Math.max(max, layout.weeks.length), 0)
+  const bandCount = Math.max(1, Math.ceil(maxWeekCount / weeksPerBand))
+  const rowHeight = bandCount * bandHeight + (bandCount - 1) * bandGap
   const rowSpan = rowHeight + rowGap
   const totalHeight = topPadding + layouts.length * rowSpan + 12
   const viewportHeight = Math.min(520, totalHeight)
@@ -123,9 +129,14 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   const visibleCanvasHeight = topPadding + visibleLayouts.length * rowSpan + 12
   const dateLocations = useMemo(() => {
     const locations = new Map<string, ContributionLocation>()
-    layouts.forEach((layout, rowIndex) => layout.positions.forEach((position, date) => locations.set(date, { rowIndex, ...position })))
+    layouts.forEach((layout, rowIndex) => layout.positions.forEach((position, date) => locations.set(date, {
+      rowIndex,
+      bandIndex: Math.floor(position.week / weeksPerBand),
+      week: position.week % weeksPerBand,
+      day: position.day,
+    })))
     return locations
-  }, [layouts])
+  }, [layouts, weeksPerBand])
 
   useEffect(() => {
     if (!frameRef.current) return
@@ -199,22 +210,25 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
       context.stroke()
       context.fillStyle = layout.year === Number(today.slice(0, 4)) ? '#c96f4f' : 'rgba(37,61,50,.58)'
       context.fillText(String(layout.year), 0, rowTop + rowHeight / 2)
-      layout.weeks.forEach((week, weekIndex) => week.forEach((date, dayIndex) => {
-        if (!date) return
-        drawCell(labelWidth + weekIndex * step, rowTop + dayIndex * step, date)
-      }))
-      let lastMonth = -1
+      const monthsByBand = new Map<number, number>()
       layout.weeks.forEach((week, weekIndex) => {
+        const bandIndex = Math.floor(weekIndex / weeksPerBand)
+        const localWeekIndex = weekIndex % weeksPerBand
+        const bandTop = rowTop + bandIndex * (bandHeight + bandGap)
+        week.forEach((date, dayIndex) => {
+          if (!date) return
+          drawCell(labelWidth + localWeekIndex * step, bandTop + dayIndex * step, date)
+        })
         const firstDate = week.find(Boolean)
         if (!firstDate) return
         const month = Number(firstDate.slice(5, 7))
-        if (month === lastMonth) return
-        lastMonth = month
+        if (monthsByBand.get(bandIndex) === month) return
+        monthsByBand.set(bandIndex, month)
         context.fillStyle = 'rgba(37,61,50,.48)'
-        context.fillText(`${month}月`, labelWidth + weekIndex * step, rowTop - 17)
+        context.fillText(`${month}月`, labelWidth + localWeekIndex * step, bandTop - 17)
       })
     })
-  }, [canvasWidth, cellSize, importantDates, labelWidth, records, rowHeight, rowSpan, selectedDate, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleRange.start, width])
+  }, [bandGap, bandHeight, canvasWidth, cellSize, importantDates, labelWidth, records, rowHeight, rowSpan, selectedDate, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleRange.start, weeksPerBand, width])
 
   useEffect(() => {
     const canvas = overlayCanvasRef.current
@@ -249,9 +263,14 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     const layout = layouts[rowIndex]
     if (!layout) return null
     const rowTop = topPadding + rowIndex * rowSpan
-    const week = Math.floor((x - labelWidth) / step)
-    const day = Math.floor((globalY - rowTop) / step)
-    if (x < labelWidth || week < 0 || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || (globalY - rowTop) % step > cellSize) return null
+    const withinRowY = globalY - rowTop
+    const bandSpan = bandHeight + bandGap
+    const bandIndex = Math.floor(withinRowY / bandSpan)
+    const bandY = withinRowY - bandIndex * bandSpan
+    const weekInBand = Math.floor((x - labelWidth) / step)
+    const week = bandIndex * weeksPerBand + weekInBand
+    const day = Math.floor(bandY / step)
+    if (x < labelWidth || bandIndex < 0 || bandIndex >= bandCount || bandY < 0 || bandY >= bandHeight || weekInBand < 0 || weekInBand >= weeksPerBand || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || bandY % step > cellSize) return null
     return layout.weeks[week]?.[day] ?? null
   }
 
@@ -267,7 +286,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     const location = dateLocations.get(date)
     if (!location) return
     const x = labelWidth + location.week * step
-    const y = topPadding + (location.rowIndex - visibleRange.start) * rowSpan + location.day * step
+    const y = topPadding + (location.rowIndex - visibleRange.start) * rowSpan + location.bandIndex * (bandHeight + bandGap) + location.day * step
     context.strokeStyle = '#253d32'
     context.lineWidth = 2
     context.strokeRect(x - 2, y - 2, cellSize + 4, cellSize + 4)
