@@ -82,14 +82,14 @@ function LifeContributionMap({ rows, today, selectedDate, records, importantDate
   const [width, setWidth] = useState(900)
   const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
   const layouts = useMemo(() => rows.map(buildContributionLayout), [rows])
-  const cellSize = width < 640 ? 7 : 9
-  const gap = width < 640 ? 3 : 4
+  const gap = width < 640 ? 2 : 4
+  const labelWidth = width < 640 ? 34 : 57
+  const cellSize = Math.max(2, Math.floor((Math.max(180, width - labelWidth - 4) - 52 * gap) / 53))
   const step = cellSize + gap
-  const labelWidth = width < 640 ? 45 : 57
   const rowHeight = step * 7 - gap
   const rowGap = width < 640 ? 15 : 19
   const topPadding = 28
-  const canvasWidth = Math.max(width - 4, 650)
+  const canvasWidth = Math.max(width - 4, 1)
   const canvasHeight = topPadding + layouts.length * (rowHeight + rowGap) + 12
   const dateLocations = useMemo(() => {
     const locations = new Map<string, { rowIndex: number; week: number; day: number }>()

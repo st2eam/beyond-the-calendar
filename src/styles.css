@@ -98,7 +98,7 @@ input[type='date'], .welcome-card > input, .modal > input { width: 100%; height:
 .contribution-frame { position: relative; }
 .contribution-summary { display: flex; justify-content: space-between; gap: 18px; padding: 0 0 14px 1px; color: rgba(37,61,50,.48); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .contribution-summary b { color: var(--ink); font-weight: 600; }
-.contribution-scroll { position: relative; overflow: auto; max-height: 520px; padding: 4px 0 12px; scrollbar-color: rgba(37,61,50,.25) transparent; }
+.contribution-scroll { position: relative; overflow-y: auto; overflow-x: hidden; max-height: 520px; padding: 4px 0 12px; scrollbar-color: rgba(37,61,50,.25) transparent; }
 .contribution-canvas-stack { position: relative; }
 .contribution-scroll canvas { position: absolute; inset: 0 auto auto 0; display: block; }
 .contribution-base { pointer-events: none; }
