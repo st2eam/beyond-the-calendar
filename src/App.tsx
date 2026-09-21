@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, MouseEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ChangeEvent, CSSProperties } from 'react'
 import {
   ArrowRightOutlined,
   BellOutlined,
@@ -8,6 +8,8 @@ import {
   CheckOutlined,
   CloseOutlined,
   EnvironmentOutlined,
+  LeftOutlined,
+  RightOutlined,
   SettingOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
@@ -45,74 +47,48 @@ function todayIso() {
   return isoDate(new Date())
 }
 
-function LifeMapCanvas({ rows, today, selectedDate, records, onSelect }: {
+function LifeYearView({ rows, year, today, selectedDate, records, importantDates, onSelect }: {
   rows: ReturnType<typeof buildLifeMap>
+  year: number
   today: string
   selectedDate: string
   records: Record<string, DailyRecord>
+  importantDates: Set<string>
   onSelect: (date: string) => void
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const frameRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(900)
-  const rowHeight = 6
-  const rowGap = 3
-  const height = rows.length * (rowHeight + rowGap) + 10
+  const row = rows.find((item) => item.year === year)
+  const months = Array.from({ length: 12 }, (_, month) => {
+    const dates = row?.cells.filter((date) => parseDate(date).getMonth() === month) ?? []
+    const first = dates[0] ? parseDate(dates[0]) : null
+    return { month, dates, leading: first ? (first.getDay() + 6) % 7 : 0 }
+  })
+  const recordedCount = row?.cells.filter((date) => records[date]).length ?? 0
 
-  useEffect(() => {
-    if (!frameRef.current) return
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(260, entry.contentRect.width)))
-    observer.observe(frameRef.current)
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ratio = window.devicePixelRatio || 1
-    canvas.width = width * ratio
-    canvas.height = height * ratio
-    canvas.style.width = `${width}px`
-    canvas.style.height = `${height}px`
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.scale(ratio, ratio)
-    context.clearRect(0, 0, width, height)
-    const labelWidth = width < 500 ? 25 : 38
-    rows.forEach((row, rowIndex) => {
-      const y = rowIndex * (rowHeight + rowGap) + 4
-      const cellWidth = Math.max(0.62, (width - labelWidth - 8) / 366)
-      context.fillStyle = 'rgba(57, 73, 58, .48)'
-      context.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace'
-      context.fillText(String(row.year).slice(-2), 0, y + 5)
-      row.cells.forEach((date, index) => {
-        const record = records[date]
-        context.fillStyle = date === today ? '#c96f4f' : record ? '#728b6d' : date < today ? '#b7a77b' : 'rgba(57, 73, 58, .12)'
-        context.fillRect(labelWidth + index * cellWidth, y, Math.max(0.55, cellWidth - 0.7), rowHeight)
-        if (date === selectedDate) {
-          context.strokeStyle = '#253d32'
-          context.lineWidth = 1.5
-          context.strokeRect(labelWidth + index * cellWidth - 1, y - 1, Math.max(1, cellWidth + 1), rowHeight + 2)
-        }
-      })
-    })
-  }, [height, records, rows, selectedDate, today, width])
-
-  function handleClick(event: MouseEvent<HTMLCanvasElement>) {
-    const labelWidth = width < 500 ? 25 : 38
-    const rowIndex = Math.floor((event.nativeEvent.offsetY - 4) / (rowHeight + rowGap))
-    const column = Math.floor((event.nativeEvent.offsetX - labelWidth) / ((width - labelWidth - 8) / 366))
-    const row = rows[rowIndex]
-    if (!row || column < 0 || column >= row.cells.length) return
-    onSelect(row.cells[column])
-  }
-
-  return <div className="map-canvas-wrap" ref={frameRef}><canvas ref={canvasRef} onClick={handleClick} role="img" aria-label="人生格点地图，点击任意格点打开当天记录" /></div>
+  return <div className="year-view" key={year} aria-label={`${year} 年的人生格点`}>
+    <div className="year-view-intro"><div><span className="year-view-kicker">LIFE YEAR {String((rows.findIndex((item) => item.year === year) + 1)).padStart(2, '0')}</span><h3>{year} <small>· {recordedCount} 个记录</small></h3></div><span className="year-view-range">{row?.cells[0]} — {row?.cells[row.cells.length - 1]}</span></div>
+    <div className="year-months">
+      {months.map(({ month, dates, leading }) => <section className={`year-month ${dates.length === 0 ? 'empty' : ''}`} key={month} style={{ '--month-index': month } as CSSProperties} aria-label={`${month + 1} 月`}>
+        <div className="month-heading"><b>{month + 1}月</b><span>{dates.length ? `${dates.length} 日` : '未抵达'}</span></div>
+        <div className="weekday-row" aria-hidden="true">{['一', '二', '三', '四', '五', '六', '日'].map((weekday) => <span key={weekday}>{weekday}</span>)}</div>
+        <div className="month-grid">
+          {Array.from({ length: leading }).map((_, index) => <span className="month-placeholder" key={`empty-${index}`} />)}
+          {dates.map((date) => {
+            const record = records[date]
+            const isToday = date === today
+            const isSelected = date === selectedDate
+            const isImportant = importantDates.has(date) || Boolean(record?.important)
+            return <button key={date} className={`year-day ${date < today ? 'past' : 'future'} ${record ? 'has-record' : ''} ${isImportant ? 'is-important' : ''} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}`} onClick={() => onSelect(date)} aria-label={`${formatChineseDate(date)}${record ? '，已有记录' : ''}${isToday ? '，今天' : ''}${isImportant ? '，重要日子' : ''}`} title={formatChineseDate(date)}><span>{Number(date.slice(8))}</span></button>
+          })}
+        </div>
+      </section>)}
+    </div>
+  </div>
 }
 
 function App() {
   const [snapshot, setSnapshot] = useState<LifeSnapshot | null>(null)
   const [selectedDate, setSelectedDate] = useState(todayIso())
+  const [mapYear, setMapYear] = useState(Number(todayIso().slice(0, 4)))
   const [draftRecord, setDraftRecord] = useState<DailyRecord | null>(null)
   const [tagInput, setTagInput] = useState('')
   const [showSettings, setShowSettings] = useState(false)
@@ -139,7 +115,27 @@ function App() {
   const todayLifeDay = birthDate ? formatLifeDay(birthDate) : 0
   const selectedRecord = snapshot?.records[selectedDate]
   const selectedIsInMap = Boolean(birthDate && selectedDate >= birthDate && selectedDate < isoDate(addYears(parseDate(birthDate), 100)))
+  const importantDates = useMemo(() => {
+    const dates = new Set<string>()
+    ;(snapshot?.importantDays ?? []).forEach((item) => {
+      if (item.type === 'annual') {
+        rows.forEach((row) => {
+          const annualDate = `${row.year}${item.date.slice(4)}`
+          if (row.cells.includes(annualDate)) dates.add(annualDate)
+        })
+      } else if (item.date) {
+        dates.add(item.date)
+      }
+    })
+    return dates
+  }, [rows, snapshot?.importantDays])
   const nextImportantDays = useMemo(() => (snapshot?.importantDays ?? []).filter((item) => item.type !== 'elapsed').map((item) => ({ item, date: getNextImportantDate(item) })).sort((a, b) => a.date.getTime() - b.date.getTime()), [snapshot])
+
+  useEffect(() => {
+    const selectedYear = Number(selectedDate.slice(0, 4))
+    if (rows.some((row) => row.year === selectedYear)) setMapYear(selectedYear)
+    else if (rows[0]) setMapYear(rows[0].year)
+  }, [rows, selectedDate])
 
   useEffect(() => {
     setDraftRecord(selectedRecord ?? blankRecord(selectedDate))
@@ -159,6 +155,7 @@ function App() {
 
   function selectDate(date: string) {
     setSelectedDate(date)
+    setMapYear(Number(date.slice(0, 4)))
     document.getElementById('day-point')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
@@ -166,7 +163,9 @@ function App() {
     if (!draftBirthDate || !snapshot) return
     const next = { ...snapshot, birthDate: draftBirthDate }
     await persist(next, '人生地图已展开')
-    setSelectedDate(today >= draftBirthDate ? today : draftBirthDate)
+    const firstDate = today >= draftBirthDate ? today : draftBirthDate
+    setSelectedDate(firstDate)
+    setMapYear(Number(firstDate.slice(0, 4)))
     setShowSettings(false)
   }
 
@@ -231,7 +230,7 @@ function App() {
         <>
           <section className="hero-grid"><div className="hero-copy"><p className="eyebrow accent">YOUR LIFE, IN DAYS</p><h2>你已经走过<br /><strong>{todayLifeDay.toLocaleString()}</strong> 天</h2><p className="hero-date">今天是你人生的第 <b>{todayLifeDay.toLocaleString()}</b> 天</p><p className="hero-caption">每一个小格，都是曾经真实发生过的二十四小时。</p></div><div className="today-note"><div className="note-topline"><span>今天 · {todayLifeDay.toLocaleString()}</span><span className="note-dot" /></div><h3>{formatChineseDate(today)}</h3><p>{snapshot.records[today]?.note || '给今天留一点位置。'}</p><button className="text-button" onClick={() => selectDate(today)}>写下今天发生的事 <ArrowRightOutlined /></button></div></section>
 
-          <section className="map-section"><div className="section-heading"><div><p className="eyebrow">THE LIFE MAP</p><h2>人生格点 <span>· 100 年</span></h2></div><div className="map-controls"><div className="map-legend"><span className="legend-past" />走过 <span className="legend-record" />有记录 <span className="legend-today" />今天 <span className="legend-future" />尚未抵达</div><button className="outline-button" onClick={() => setShowListView(!showListView)}>{showListView ? '回到地图' : '日期列表'}</button></div></div><div className="map-frame"><div className="map-ruler"><span>出生 · {birthDate}</span><span>每一行是一年</span><span>100 岁</span></div>{showListView ? <div className="accessible-list" aria-label="按年份浏览人生格点">{rows.map((row) => <div className="accessible-year" key={row.year}><span>{row.year}</span><div>{row.cells.filter((date) => snapshot.records[date] || date === today).slice(0, 12).map((date) => <button key={date} onClick={() => selectDate(date)}>{date === today ? '今天' : date.slice(5)}</button>)}<button className="year-link" onClick={() => selectDate(row.cells[0])}>打开这一年 · {row.cells.length} 天</button></div></div>)}</div> : <LifeMapCanvas rows={rows} today={today} selectedDate={selectedDate} records={snapshot.records} onSelect={selectDate} />}</div></section>
+          <section className="map-section"><div className="section-heading"><div><p className="eyebrow">THE LIFE MAP</p><h2>人生格点 <span>· 按年浏览</span></h2></div><div className="map-controls"><div className="map-legend"><span className="legend-past" />走过 <span className="legend-record" />有记录 <span className="legend-today" />今天 <span className="legend-important" />重要日子</div><button className="outline-button" onClick={() => setShowListView(!showListView)}>{showListView ? '回到地图' : '日期列表'}</button></div></div><div className="map-frame"><div className="year-navigation"><button className="year-arrow" aria-label="上一年" disabled={mapYear === rows[0]?.year} onClick={() => setMapYear((current) => Math.max(rows[0]?.year ?? current, current - 1))}><LeftOutlined /></button><div className="year-strip" aria-label="选择人生年份">{rows.map((row) => <button key={row.year} className={row.year === mapYear ? 'active' : ''} onClick={() => setMapYear(row.year)}>{row.year}</button>)}</div><button className="year-arrow" aria-label="下一年" disabled={mapYear === rows[rows.length - 1]?.year} onClick={() => setMapYear((current) => Math.min(rows[rows.length - 1]?.year ?? current, current + 1))}><RightOutlined /></button><button className="year-today" onClick={() => setMapYear(Number(today.slice(0, 4)))} disabled={!rows.some((row) => row.year === Number(today.slice(0, 4)))}>回到今天</button></div>{showListView ? <div className="accessible-list" aria-label="按年份浏览人生格点">{rows.map((row) => <div className={`accessible-year ${row.year === mapYear ? 'active' : ''}`} key={row.year}><span>{row.year}</span><div>{row.cells.filter((date) => snapshot.records[date] || date === today).slice(0, 12).map((date) => <button key={date} onClick={() => selectDate(date)}>{date === today ? '今天' : date.slice(5)}</button>)}<button className="year-link" onClick={() => { setMapYear(row.year); selectDate(row.cells[0]) }}>打开这一年 · {row.cells.length} 天</button></div></div>)}</div> : <LifeYearView rows={rows} year={mapYear} today={today} selectedDate={selectedDate} records={snapshot.records} importantDates={importantDates} onSelect={selectDate} />}</div></section>
 
           <section className="lower-grid"><div className="record-panel panel-paper" id="day-point"><div className="panel-heading"><div><p className="eyebrow">DAY POINT</p><h2>{formatChineseDate(selectedDate)}</h2></div><span className="record-state">{selectedRecord ? '已留下记录' : '还没有记录'}</span></div>{!selectedIsInMap && <p className="out-of-range">这个日期还不在你的人生地图里。</p>}<textarea value={draftRecord?.note ?? ''} onChange={(event) => draftRecord && setDraftRecord({ ...draftRecord, note: event.target.value })} placeholder="今天发生了什么？写给未来的自己……" /><div className="record-meta"><div className="mood-row"><span>今天的心情</span>{moods.map((mood) => <button key={mood} className={draftRecord?.mood === mood ? 'active' : ''} onClick={() => draftRecord && setDraftRecord({ ...draftRecord, mood })}>{mood}</button>)}</div><div className="record-field"><label htmlFor="location"><EnvironmentOutlined /> 地点</label><input id="location" value={draftRecord?.location ?? ''} onChange={(event) => draftRecord && setDraftRecord({ ...draftRecord, location: event.target.value })} placeholder="今天在哪里？" /></div><div className="record-field"><label htmlFor="people"><BookOutlined /> 人物</label><input id="people" value={draftRecord?.people.join('、') ?? ''} onChange={(event) => draftRecord && setDraftRecord({ ...draftRecord, people: event.target.value.split('、').map((item) => item.trim()).filter(Boolean) })} placeholder="和谁一起？用顿号分隔" /></div><div className="tag-row"><span><TagsOutlined /> 标签</span><div className="tag-list">{draftRecord?.tags.map((tag) => <button key={tag} className="tag" onClick={() => draftRecord && setDraftRecord({ ...draftRecord, tags: draftRecord.tags.filter((item) => item !== tag) })}>#{tag} <CloseOutlined /></button>)}<input value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addTag()} onBlur={addTag} placeholder="添加标签" /></div></div><div className="photo-row"><div className="photo-row-label"><CameraOutlined /> 照片</div><div className="photo-grid">{draftRecord?.photos.map((photo, index) => <div className="photo-thumb" key={`${photo.slice(0, 16)}-${index}`}><img src={photo} alt="日点照片" /><button aria-label="移除照片" onClick={() => draftRecord && setDraftRecord({ ...draftRecord, photos: draftRecord.photos.filter((_, photoIndex) => photoIndex !== index) })}><CloseOutlined /></button></div>)}{(draftRecord?.photos.length ?? 0) < 9 && <label className="photo-add"><CameraOutlined /><span>添加照片</span><input type="file" accept="image/*" multiple onChange={addPhotos} /></label>}</div></div><label className="important-toggle"><input type="checkbox" checked={draftRecord?.important ?? false} onChange={(event) => draftRecord && setDraftRecord({ ...draftRecord, important: event.target.checked })} /><span><CheckOutlined /></span>把这一天标为重要日子</label></div><div className="record-actions"><span>保存在此设备 · {draftRecord?.photos.length ?? 0}/9 张照片</span><button className="primary-button small" onClick={saveRecord}>保存这一天</button></div></div>
             <aside className="side-column"><button className="feature-card chapter-card" onClick={() => setShowChapters(true)}><span className="feature-index">02</span><div><p className="eyebrow">LIFE CHAPTERS</p><h3>人生章节</h3><p>为连续的日子，取一个名字。</p></div><ArrowRightOutlined className="feature-arrow" /></button><button className="feature-card milestone-card" onClick={() => setShowImportantDays(true)}><span className="feature-index">03</span><div><p className="eyebrow">IMPORTANT DAYS</p><h3>重要日子</h3><p>{snapshot.importantDays.length ? `已经记下 ${snapshot.importantDays.length} 个值得回望的日子。` : '记住那些改变了你的日子。'}</p></div><ArrowRightOutlined className="feature-arrow" /></button><div className="chapter-list">{snapshot.chapters.length ? snapshot.chapters.map((chapter) => <div className="chapter-line" key={chapter.id}><span className={`chapter-swatch ${chapter.color}`} /><div><b>{chapter.title}</b><small>{chapter.start} — {chapter.end || '至今'}</small></div></div>) : <p className="empty-note">你的第一章还没有命名。</p>}</div>{nextImportantDays.length > 0 && <div className="upcoming-note"><BellOutlined /><div><span>下一个重要日子</span><b>{nextImportantDays[0].item.title}</b><small>{Math.max(0, Math.ceil((nextImportantDays[0].date.getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000))} 天后 · {formatChineseDate(isoDate(nextImportantDays[0].date))}</small></div></div>}</aside></section>
