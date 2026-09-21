@@ -9,6 +9,26 @@ npm install
 npm run dev
 ```
 
+## 网站部署
+
+线上版本由 Sites 托管，生产地址为：
+
+<https://beyond-the-calendar.stream1013.chatgpt.site>
+
+项目源码仓库为：
+
+<https://github.com/st2eam/beyond-the-calendar>
+
+Sites 只托管前端静态文件，不保存用户日记、照片或其他个人数据。当前 MVP 使用浏览器 IndexedDB 本地存储，离线时也可以继续记录；后续同步能力将由独立的 Cloudflare Worker、D1 和 R2 提供。
+
+部署配置位于 `.openai/hosting.json`，静态输出目录为 `dist`。发布前先完成生产构建：
+
+```bash
+npm run build
+```
+
+正式发布时，将同一个 Git 提交分别推送到 GitHub 和 Sites 源仓库，再使用 Sites 保存版本并部署。项目不使用 GitHub Pages，也不使用 GitHub Actions 部署。不要把 `.env`、恢复码、密钥或其他生产凭据提交到仓库。
+
 ## 当前 MVP
 
 - 设置出生日期后生成 100 年人生格点地图
