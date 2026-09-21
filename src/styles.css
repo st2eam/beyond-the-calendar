@@ -31,6 +31,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 @keyframes yearReveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes monthReveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes todayPulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(201,111,79,.16); } 50% { box-shadow: 0 0 0 5px rgba(201,111,79,.08); } }
+@keyframes tooltipIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 
 .topbar, .hero-grid, .map-section, .lower-grid, .footer { width: min(1180px, calc(100% - 64px)); margin-inline: auto; }
 .topbar { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 28px 0 18px; border-bottom: 1px solid var(--faint); }
@@ -94,6 +95,13 @@ input[type='date'], .welcome-card > input, .modal > input { width: 100%; height:
 .map-ruler { display: flex; justify-content: space-between; padding: 0 0 13px 39px; color: rgba(37,61,50,.43); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
 .map-canvas-wrap { overflow-x: auto; max-height: 520px; padding-right: 4px; }
 .map-canvas-wrap canvas { display: block; cursor: crosshair; }
+.contribution-frame { position: relative; }
+.contribution-summary { display: flex; justify-content: space-between; gap: 18px; padding: 0 0 14px 1px; color: rgba(37,61,50,.48); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.contribution-summary b { color: var(--ink); font-weight: 600; }
+.contribution-scroll { position: relative; overflow: auto; max-height: 520px; padding: 4px 0 12px; scrollbar-color: rgba(37,61,50,.25) transparent; }
+.contribution-scroll canvas { display: block; cursor: crosshair; }
+.map-hovercard { position: absolute; z-index: 2; display: grid; gap: 3px; min-width: 150px; padding: 9px 11px; border: 1px solid rgba(37,61,50,.18); color: var(--paper); background: var(--ink); box-shadow: 4px 4px 0 rgba(201,111,79,.45); pointer-events: none; animation: tooltipIn .16s ease-out both; }
+.map-hovercard b { font-size: 11px; font-weight: 500; }.map-hovercard span { color: rgba(244,238,227,.64); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .year-navigation { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px auto; gap: 9px; align-items: center; padding-bottom: 17px; border-bottom: 1px solid rgba(37,61,50,.12); }
 .year-strip { display: flex; min-width: 0; overflow-x: auto; gap: 6px; padding: 3px 2px 7px; scrollbar-width: none; scroll-behavior: smooth; scroll-snap-type: x proximity; }
 .year-strip::-webkit-scrollbar { display: none; }
