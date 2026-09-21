@@ -102,7 +102,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   const layouts = useMemo(() => rows.map(buildContributionLayout), [rows])
   const gap = 4
   const labelWidth = width < 640 ? 34 : 57
-  const cellSize = 10
+  const cellSize = 20
   const step = cellSize + gap
   const bandHeight = step * 7 - gap
   const bandGap = width < 640 ? 8 : 10
