@@ -176,7 +176,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     context.clearRect(0, 0, canvasWidth, visibleCanvasHeight)
     context.font = `${width < 640 ? 9 : 10}px ui-monospace, SFMono-Regular, Menlo, monospace`
-    context.textBaseline = 'middle'
+    context.textBaseline = 'top'
 
     const drawCell = (x: number, y: number, date: string) => {
       const record = records[date]
@@ -209,8 +209,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
       context.lineTo(canvasWidth, rowTop - 8)
       context.stroke()
       context.fillStyle = layout.year === Number(today.slice(0, 4)) ? '#c96f4f' : 'rgba(37,61,50,.58)'
-      context.fillText(String(layout.year), 0, rowTop + rowHeight / 2)
-      const monthsByBand = new Map<number, number>()
+      context.fillText(String(layout.year), 0, rowTop - 1)
       layout.weeks.forEach((week, weekIndex) => {
         const bandIndex = Math.floor(weekIndex / weeksPerBand)
         const localWeekIndex = weekIndex % weeksPerBand
@@ -219,13 +218,6 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
           if (!date) return
           drawCell(labelWidth + localWeekIndex * step, bandTop + dayIndex * step, date)
         })
-        const firstDate = week.find(Boolean)
-        if (!firstDate) return
-        const month = Number(firstDate.slice(5, 7))
-        if (monthsByBand.get(bandIndex) === month) return
-        monthsByBand.set(bandIndex, month)
-        context.fillStyle = 'rgba(37,61,50,.48)'
-        context.fillText(`${month}月`, labelWidth + localWeekIndex * step, bandTop - 17)
       })
     })
   }, [bandGap, bandHeight, canvasWidth, cellSize, importantDates, labelWidth, records, rowHeight, rowSpan, selectedDate, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleRange.start, weeksPerBand, width])
