@@ -121,26 +121,34 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   const step = cellSize + gap
   const canvasWidth = Math.max(viewportWidth, labelWidth + maxWeekCount * step + gap)
   const weeksPerBand = Math.max(1, Math.min(54, Math.floor((canvasWidth - labelWidth + gap) / step)))
-  const bandCount = Math.max(1, Math.ceil(maxWeekCount / weeksPerBand))
   const bandHeight = step * 7 - gap
   const bandGap = width < 640 ? 6 : 8
   const rowGap = width < 640 ? 10 : 14
   const topPadding = 26
-  const rowHeight = bandCount * bandHeight + (bandCount - 1) * bandGap
-  const rowSpan = rowHeight + rowGap
-  const totalHeight = topPadding + layouts.length * rowSpan + 12
+  const rowBandCounts = layouts.map((layout) => Math.max(1, Math.ceil(layout.weeks.length / weeksPerBand)))
+  const rowHeights = rowBandCounts.map((count) => count * bandHeight + (count - 1) * bandGap)
+  const rowOffsets: number[] = []
+  let nextRowOffset = topPadding
+  rowHeights.forEach((height) => {
+    rowOffsets.push(nextRowOffset)
+    nextRowOffset += height + rowGap
+  })
+  const totalHeight = layouts.length ? nextRowOffset - rowGap + 12 : topPadding + 12
   const viewportHeight = Math.min(520, totalHeight)
   const overscan = 3
   const getVisibleRange = (scrollTop: number): VisibleYearRange => {
     if (!layouts.length) return { start: 0, end: -1 }
-    const start = Math.max(0, Math.floor(scrollTop / rowSpan) - overscan)
-    const end = Math.min(layouts.length - 1, Math.ceil((scrollTop + viewportHeight) / rowSpan) + overscan)
+    const firstVisible = rowHeights.findIndex((height, index) => rowOffsets[index] + height >= scrollTop)
+    const lastVisible = rowOffsets.findIndex((offset) => offset > scrollTop + viewportHeight)
+    const start = Math.max(0, (firstVisible === -1 ? layouts.length - 1 : firstVisible) - overscan)
+    const end = Math.min(layouts.length - 1, (lastVisible === -1 ? layouts.length - 1 : Math.max(firstVisible, lastVisible)) + overscan)
     return { start, end }
   }
   const [visibleRange, setVisibleRange] = useState<VisibleYearRange>(() => getVisibleRange(0))
   const visibleLayouts = useMemo(() => layouts.slice(visibleRange.start, visibleRange.end + 1), [layouts, visibleRange])
-  const visibleOffset = visibleRange.start * rowSpan
-  const visibleCanvasHeight = topPadding + visibleLayouts.length * rowSpan + 12
+  const visibleOffset = layouts.length ? rowOffsets[visibleRange.start] - topPadding : 0
+  const visibleRowsHeight = visibleLayouts.reduce((sum, _layout, index) => sum + (rowHeights[visibleRange.start + index] ?? 0), 0)
+  const visibleCanvasHeight = topPadding + visibleRowsHeight + Math.max(0, visibleLayouts.length - 1) * rowGap + 12
   const dateLocations = useMemo(() => {
     const locations = new Map<string, ContributionLocation>()
     layouts.forEach((layout, rowIndex) => layout.positions.forEach((position, date) => locations.set(date, {
@@ -177,7 +185,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   useEffect(() => {
     const nextRange = getVisibleRange(scrollTopRef.current)
     setVisibleRange((current) => current.start === nextRange.start && current.end === nextRange.end ? current : nextRange)
-  }, [layouts.length, rowSpan, viewportHeight])
+  }, [layouts.length, rowGap, totalHeight, viewportHeight])
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current)
@@ -232,14 +240,16 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
 
     visibleLayouts.forEach((layout, visibleRowIndex) => {
       const globalRowIndex = visibleRange.start + visibleRowIndex
-      const rowTop = topPadding + visibleRowIndex * rowSpan
+      const rowTop = rowOffsets[globalRowIndex] - visibleOffset
+      const rowHeight = rowHeights[globalRowIndex]
+      const rowWidth = Math.min(canvasWidth, labelWidth + layout.weeks.length * step + gap)
       context.fillStyle = globalRowIndex % 2 === 0 ? 'rgba(37,61,50,.025)' : 'transparent'
-      if (globalRowIndex % 2 === 0) context.fillRect(0, rowTop - 8, canvasWidth, rowHeight + 15)
+      if (globalRowIndex % 2 === 0) context.fillRect(0, rowTop - 8, rowWidth, rowHeight + 15)
       context.strokeStyle = 'rgba(37,61,50,.13)'
       context.lineWidth = 1
       context.beginPath()
       context.moveTo(0, rowTop - 8)
-      context.lineTo(canvasWidth, rowTop - 8)
+      context.lineTo(rowWidth, rowTop - 8)
       context.stroke()
       context.fillStyle = layout.year === Number(today.slice(0, 4)) ? '#c96f4f' : 'rgba(37,61,50,.58)'
       context.fillText(String(layout.year), 0, rowTop - 1)
@@ -253,7 +263,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
         })
       })
     })
-  }, [bandGap, bandHeight, canvasWidth, cellSize, holidayDates, importantDates, labelWidth, records, rowHeight, rowSpan, selectedDate, showHolidays, showWeekends, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleRange.start, weeksPerBand, width])
+  }, [bandGap, bandHeight, canvasWidth, cellSize, holidayDates, importantDates, labelWidth, records, rowGap, rowHeights, rowOffsets, selectedDate, showHolidays, showWeekends, step, today, topPadding, visibleCanvasHeight, visibleLayouts, visibleOffset, visibleRange.start, weeksPerBand, width])
 
   useEffect(() => {
     const canvas = overlayCanvasRef.current
@@ -323,10 +333,10 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
 
   function dateAtPoint(x: number, y: number) {
     const globalY = y + visibleOffset
-    const rowIndex = Math.floor((globalY - topPadding) / rowSpan)
+    const rowIndex = rowOffsets.findIndex((offset, index) => globalY >= offset && globalY < offset + rowHeights[index])
     const layout = layouts[rowIndex]
     if (!layout) return null
-    const rowTop = topPadding + rowIndex * rowSpan
+    const rowTop = rowOffsets[rowIndex]
     const withinRowY = globalY - rowTop
     const bandSpan = bandHeight + bandGap
     const bandIndex = Math.floor(withinRowY / bandSpan)
@@ -334,7 +344,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     const weekInBand = Math.floor((x - labelWidth) / step)
     const week = bandIndex * weeksPerBand + weekInBand
     const day = Math.floor(bandY / step)
-    if (x < labelWidth || bandIndex < 0 || bandIndex >= bandCount || bandY < 0 || bandY >= bandHeight || weekInBand < 0 || weekInBand >= weeksPerBand || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || bandY % step > cellSize) return null
+    if (x < labelWidth || bandIndex < 0 || bandIndex >= rowBandCounts[rowIndex] || bandY < 0 || bandY >= bandHeight || weekInBand < 0 || weekInBand >= weeksPerBand || week < 0 || week >= layout.weeks.length || day < 0 || day > 6 || (x - labelWidth) % step > cellSize || bandY % step > cellSize) return null
     return layout.weeks[week]?.[day] ?? null
   }
 
@@ -350,7 +360,7 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     const location = dateLocations.get(date)
     if (!location) return
     const x = labelWidth + location.week * step
-    const y = topPadding + (location.rowIndex - visibleRange.start) * rowSpan + location.bandIndex * (bandHeight + bandGap) + location.day * step
+    const y = rowOffsets[location.rowIndex] - visibleOffset + location.bandIndex * (bandHeight + bandGap) + location.day * step
     context.strokeStyle = '#253d32'
     context.lineWidth = 2
     context.strokeRect(x - 2, y - 2, cellSize + 4, cellSize + 4)
