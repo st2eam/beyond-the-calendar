@@ -96,13 +96,15 @@ input[type='date'], .welcome-card > input, .modal > input { width: 100%; height:
 .map-canvas-wrap { overflow-x: auto; max-height: 520px; padding-right: 4px; }
 .map-canvas-wrap canvas { display: block; cursor: crosshair; }
 .contribution-frame { position: relative; }
-.contribution-summary { display: flex; justify-content: space-between; gap: 18px; padding: 0 0 14px 1px; color: rgba(37,61,50,.48); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.contribution-summary { display: flex; justify-content: space-between; align-items: center; gap: 18px; min-height: 30px; padding: 0 0 10px 1px; color: rgba(37,61,50,.48); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .contribution-summary b { color: var(--ink); font-weight: 600; }
-.contribution-scroll { position: relative; overflow-y: auto; overflow-x: hidden; max-height: 520px; padding: 4px 0 12px; scrollbar-color: rgba(37,61,50,.25) transparent; }
+.map-zoom-hint { min-height: 30px; padding: 4px 0; border: 0; color: rgba(37,61,50,.48); background: transparent; font: inherit; cursor: pointer; }
+.map-zoom-hint.active { color: var(--terracotta); }
+.contribution-scroll { position: relative; overflow: auto; max-height: 520px; padding: 4px 0 12px; scrollbar-color: rgba(37,61,50,.25) transparent; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .contribution-canvas-stack { position: relative; }
 .contribution-scroll canvas { position: absolute; top: 0; left: 0; display: block; }
 .contribution-base { pointer-events: none; }
-.contribution-overlay { cursor: crosshair; }
+.contribution-overlay { cursor: crosshair; touch-action: pan-x pan-y; }
 .map-hovercard { position: absolute; z-index: 2; display: grid; gap: 3px; min-width: 150px; padding: 9px 11px; border: 1px solid rgba(37,61,50,.18); color: var(--paper); background: var(--ink); box-shadow: 4px 4px 0 rgba(201,111,79,.45); pointer-events: none; animation: tooltipIn .16s ease-out both; }
 .map-hovercard b { font-size: 11px; font-weight: 500; }.map-hovercard span { color: rgba(244,238,227,.64); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .year-navigation { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px auto; gap: 9px; align-items: center; padding-bottom: 17px; border-bottom: 1px solid rgba(37,61,50,.12); }
@@ -199,7 +201,7 @@ input[type='date'], .welcome-card > input, .modal > input { width: 100%; height:
   .topbar { padding-top: 22px; }.local-badge { display: none; }
   .hero-grid, .welcome-panel, .lower-grid { grid-template-columns: 1fr; }.hero-grid { gap: 36px; padding: 58px 0 61px; }.hero-copy h2, .welcome-copy h2 { font-size: 48px; }.today-note { box-shadow: 8px 8px 0 #dac9b2; }
   .welcome-panel { width: min(100% - 36px, 560px); gap: 40px; padding: 54px 0 75px; }.welcome-card { box-shadow: 8px 8px 0 #dac9b2; }
-  .section-heading { align-items: start; gap: 19px; flex-direction: column; }.map-controls { width: 100%; justify-content: space-between; align-items: start; }.map-legend { max-width: 270px; }.map-frame { padding: 15px 10px; margin-inline: -5px; }
+  .section-heading { align-items: start; gap: 19px; flex-direction: column; }.map-controls { width: 100%; justify-content: space-between; align-items: start; }.map-legend { max-width: 270px; }.map-frame { padding: 15px 10px; margin-inline: -5px; }.contribution-summary { align-items: start; gap: 10px; }.map-zoom-hint { text-align: right; }
   .year-navigation { grid-template-columns: 32px minmax(0, 1fr) 32px; }.year-today { grid-column: 1 / -1; width: 100%; min-height: 36px; }.year-strip button { min-width: 51px; }.year-view-intro { align-items: start; flex-direction: column; gap: 7px; }.year-months { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }.year-month { padding: 11px 8px 9px; }.weekday-row, .month-grid { gap: 3px; }.year-day { font-size: 9px; }
   .lower-grid { gap: 19px; padding-bottom: 60px; }.panel-paper { padding: 22px 19px 21px; }.panel-heading { display: block; }.record-state { display: block; margin-top: 10px; }.mood-row { flex-wrap: wrap; gap: 6px; }.mood-row > span { width: 100%; }.footer { display: block; line-height: 1.8; }.footer span { display: block; }.footer span + span { margin-top: 5px; }.modal { padding: 26px; }.record-actions { align-items: end; gap: 12px; }.record-actions > span { max-width: 145px; line-height: 1.5; }.accessible-year { grid-template-columns: 40px 1fr; gap: 10px; }
 }

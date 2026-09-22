@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, MouseEvent, UIEvent } from 'react'
+import type { ChangeEvent, MouseEvent, PointerEvent as ReactPointerEvent, UIEvent } from 'react'
 import {
   ArrowRightOutlined,
   BellOutlined,
@@ -98,20 +98,30 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   const scrollFrameRef = useRef<number | null>(null)
   const [width, setWidth] = useState(900)
   const [finePointer, setFinePointer] = useState(false)
+  const [touchCapable, setTouchCapable] = useState(false)
+  const [zoom, setZoom] = useState(1)
   const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
+  const suppressClickRef = useRef(false)
+  const suppressClickTimeoutRef = useRef<number | null>(null)
   const layouts = useMemo(() => rows.map(buildContributionLayout), [rows])
-  const gap = 4
-  const labelWidth = width < 640 ? 34 : 57
-  const cellSize = 20
-  const step = cellSize + gap
-  const bandHeight = step * 7 - gap
-  const bandGap = width < 640 ? 8 : 10
-  const rowGap = width < 640 ? 15 : 19
-  const topPadding = 28
-  const canvasWidth = Math.max(width - 4, 1)
-  const weeksPerBand = Math.max(1, Math.min(54, Math.floor((canvasWidth - labelWidth + gap) / step)))
+  const viewportWidth = Math.max(width - 4, 1)
   const maxWeekCount = layouts.reduce((max, layout) => Math.max(max, layout.weeks.length), 0)
+  const gap = width < 400 ? 1 : width < 640 ? 2 : 3
+  const labelWidth = width < 640 ? 34 : 57
+  const availableWeekWidth = Math.max(viewportWidth - labelWidth, 1)
+  const idealStep = maxWeekCount ? availableWeekWidth / maxWeekCount : availableWeekWidth
+  const baseCellSize = Math.max(4, Math.floor(Math.min(22, idealStep - gap)))
+  const cellSize = Math.max(4, Math.floor(baseCellSize * zoom))
+  const step = cellSize + gap
+  const canvasWidth = Math.max(viewportWidth, labelWidth + maxWeekCount * step + gap)
+  const weeksPerBand = Math.max(1, Math.min(54, Math.floor((canvasWidth - labelWidth + gap) / step)))
   const bandCount = Math.max(1, Math.ceil(maxWeekCount / weeksPerBand))
+  const bandHeight = step * 7 - gap
+  const bandGap = width < 640 ? 6 : 8
+  const rowGap = width < 640 ? 10 : 14
+  const topPadding = 26
   const rowHeight = bandCount * bandHeight + (bandCount - 1) * bandGap
   const rowSpan = rowHeight + rowGap
   const totalHeight = topPadding + layouts.length * rowSpan + 12
@@ -151,6 +161,13 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     updatePointer()
     query.addEventListener?.('change', updatePointer)
     return () => query.removeEventListener?.('change', updatePointer)
+  }, [])
+
+  useEffect(() => {
+    setTouchCapable(window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0)
+    return () => {
+      if (suppressClickTimeoutRef.current !== null) window.clearTimeout(suppressClickTimeoutRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -249,6 +266,45 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
     })
   }
 
+  function pinchDistance() {
+    const points = [...pointersRef.current.values()]
+    if (points.length < 2) return 0
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType !== 'touch') return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size === 2) {
+      const distance = pinchDistance()
+      if (distance > 0) pinchRef.current = { distance, zoom }
+    }
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType !== 'touch' || !pointersRef.current.has(event.pointerId)) return
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size < 2 || !pinchRef.current) return
+    event.preventDefault()
+    const distance = pinchDistance()
+    if (!distance) return
+    const nextZoom = Math.min(3, Math.max(1, pinchRef.current.zoom * distance / pinchRef.current.distance))
+    if (Math.abs(nextZoom - pinchRef.current.zoom) > .04) {
+      suppressClickRef.current = true
+      if (suppressClickTimeoutRef.current !== null) window.clearTimeout(suppressClickTimeoutRef.current)
+      suppressClickTimeoutRef.current = window.setTimeout(() => { suppressClickRef.current = false }, 450)
+    }
+    setZoom(nextZoom)
+  }
+
+  function handlePointerEnd(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType !== 'touch') return
+    pointersRef.current.delete(event.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
   function dateAtPoint(x: number, y: number) {
     const globalY = y + visibleOffset
     const rowIndex = Math.floor((globalY - topPadding) / rowSpan)
@@ -299,6 +355,10 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
   }
 
   function handleClick(event: MouseEvent<HTMLCanvasElement>) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
     const date = dateAtPoint(event.nativeEvent.offsetX, event.nativeEvent.offsetY)
     if (date) onSelect(date)
   }
@@ -310,8 +370,8 @@ const LifeContributionMap = memo(function LifeContributionMap({ rows, today, sel
 
   const hoveredRecord = hovered ? records[hovered.date] : undefined
   return <div className="contribution-frame" ref={frameRef}>
-    <div className="contribution-summary"><span><b>{rows.length} 年</b> · 每一个小格是一日</span><span>上下滚动回望整张人生地图</span></div>
-    <div className="contribution-scroll" ref={scrollRef} onScroll={handleScroll}><div className="contribution-canvas-stack" style={{ width: canvasWidth, height: totalHeight }}><canvas ref={baseCanvasRef} className="contribution-base" style={{ top: visibleOffset }} aria-hidden="true" /><canvas ref={overlayCanvasRef} className="contribution-overlay" style={{ top: visibleOffset }} onMouseMove={finePointer ? handleMove : undefined} onMouseLeave={finePointer ? handleLeave : undefined} onClick={handleClick} role="img" aria-label="人生格点贡献图，按年份分隔，点击任意小格打开当天记录" />{hovered && <div className="map-hovercard" style={{ left: Math.min(hovered.x + 14, canvasWidth - 175), top: Math.max(hovered.y - 18, 8) }} role="tooltip"><b>{formatChineseDate(hovered.date)}</b><span>{hoveredRecord ? '已有记录' : hovered.date === today ? '今天' : hovered.date < today ? '走过的一天' : '尚未抵达'}</span></div>}</div></div>
+    <div className="contribution-summary"><span><b>{rows.length} 年</b> · 每一格是一日</span>{touchCapable ? <button className={`map-zoom-hint${zoom > 1 ? ' active' : ''}`} type="button" onClick={() => setZoom(1)} aria-label={zoom > 1 ? '恢复格点大小' : '双指展开可放大格点'}>{zoom > 1 ? `${Math.round(zoom * 100)}% · 点此还原` : '双指展开放大'}</button> : <span>年份紧凑排列 · 上下滚动回望</span>}</div>
+    <div className="contribution-scroll" ref={scrollRef} onScroll={handleScroll}><div className="contribution-canvas-stack" style={{ width: canvasWidth, height: totalHeight }}><canvas ref={baseCanvasRef} className="contribution-base" style={{ top: visibleOffset }} aria-hidden="true" /><canvas ref={overlayCanvasRef} className="contribution-overlay" style={{ top: visibleOffset }} onMouseMove={finePointer ? handleMove : undefined} onMouseLeave={finePointer ? handleLeave : undefined} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerEnd} onPointerCancel={handlePointerEnd} onClick={handleClick} role="img" aria-label="人生格点贡献图，按年份分隔，点击任意小格打开当天记录" />{hovered && <div className="map-hovercard" style={{ left: Math.min(hovered.x + 14, canvasWidth - 175), top: Math.max(hovered.y - 18, 8) }} role="tooltip"><b>{formatChineseDate(hovered.date)}</b><span>{hoveredRecord ? '已有记录' : hovered.date === today ? '今天' : hovered.date < today ? '走过的一天' : '尚未抵达'}</span></div>}</div></div>
   </div>
 })
 
